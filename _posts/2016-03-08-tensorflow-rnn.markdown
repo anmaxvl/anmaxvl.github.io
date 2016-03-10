@@ -1,7 +1,7 @@
 ---
 author: "Maksim An"
 title:	"TensorFlow and Recurrent Neural Networks."
-date:	2016-03-08 13:42:00 +0900
+date:	2016-03-10 13:34:00 +0900
 layout:	post
 ---
 
