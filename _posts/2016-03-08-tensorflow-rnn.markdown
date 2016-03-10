@@ -182,7 +182,7 @@ plt.show()
 And here is what we get after training:
 ![Training complete](/assets/training-complete.png)
 
-This implementation is not optimal of course, but I wanted to make it straightforward. Some sort of batch processing can be done in order to reduce memory consumption etc. But I will leave it for now and may be (if I am not too lazy) fix this later. Hope you will have fun with it :)
+Full code is available on my [github][my-github]. This implementation is not optimal of course, but I wanted to make it straightforward. Some sort of batch processing can be done in order to reduce memory consumption etc. But I will leave it for now and may be (if I am not too lazy) fix this later. Hope you will have fun with it :)
 
 Feel free to contact me if you have any questions.
 
@@ -191,3 +191,4 @@ Cheers!
 [tensorflow-official]: https://www.tensorflow.org/
 [reddit-post]: https://www.reddit.com/r/MachineLearning/comments/3sok8k/tensorflow_basic_rnn_example_with_variable_length/
 [colah-blog]: http://colah.github.io/posts/2015-08-Understanding-LSTMs/
+[my-github]: https://github.com/anmaxvl/machine-learning/blob/master/sine_wave.py
