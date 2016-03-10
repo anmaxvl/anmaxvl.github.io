@@ -5,7 +5,7 @@ date:	2016-03-10 13:34:00 +0900
 layout:	post
 ---
 
-Google opensourced their library for numerical computations in the end of the last year: [TensorFlow][tensorflow-official]. It comes with a nice python API and documentation. I know that there are other python libraries wich may be simpler or even perform better (in terms of speed), but it's Google, you know, and I am one of those `#google#only#does#great#things` boys (jk). It just happened that it was open sourced right at the time I got interested in machine learning again.
+Google open sourced their library for numerical computations in the end of the last year: [TensorFlow][tensorflow-official]. It comes with a nice python API and documentation. I know that there are other libraries which may be simpler or even perform better (in terms of speed), but it's Google, you know, and I am one of those `#google#only#does#great#things` boys (jk). It just happened that it was open sourced right at the time I got interested in machine learning again.
 
 To start things off, I decided to look into examples and tutorials Google provided. They work and all, but guess what? it is actually not that simple to jump straight into developing something on your own (at least that was my case). So I decided to start from simple things and going to share my experience with you.
 
