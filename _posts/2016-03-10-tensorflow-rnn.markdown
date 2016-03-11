@@ -160,19 +160,19 @@ for i in range(100):
 	
 	session.run(tf.assign(lr, new_lr))
 
-	err, net_outs, _ = session.run([error, softmax_output, train_op], feed_dict=feed)
+	err, net_outs, _ = session.run([error, output, train_op], feed_dict=feed)
 	print('Epoch %d: %1.5f') % (i, err)
 
 saver.save(session, 'sine-wave-rnn-'+str(num_hidden)+'-'+str(seq_width), global_step=0)
 
 #now lets feed training data to the network
-train_outs = session.run(softmax_output, feed_dict=feed)
+train_outs = session.run(output, feed_dict=feed)
 plt.plot(x[:n_steps], train_target, 'b-', x[:n_steps], train_outs, 'g--')
 
 #get the rest of the data
 test_input, test_target = get_input(y, n_steps, offset=n_steps, seq_width=10,lag=60)
 test_fed={seq_input:test_input, seq_target:test_target, early_stop:n_steps}
-test_outs = session.run(softmax_output, feed_dict=feed)
+test_outs = session.run(output, feed_dict=feed)
 
 plt.plot(x[n_steps:2*n_steps], test_outs, 'r--')
 plt.plot(x[n_steps:2*n_steps], test_target, 'b-')
