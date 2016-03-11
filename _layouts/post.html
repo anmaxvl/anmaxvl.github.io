@@ -7,13 +7,33 @@ layout: default
     <h1 class="post-title" itemprop="name headline">{{ page.title }}</h1>
     <p class="post-meta"><time datetime="{{ page.date | date_to_xmlschema }}" itemprop="datePublished">{{ page.date | date: "%b %-d, %Y" }}</time>{% if page.author %} • <span itemprop="author" itemscope itemtype="http://schema.org/Person"><span itemprop="name">{{ page.author }}</span></span>{% endif %}</p>
   </header>
+    <script>
+      window.fbAsyncInit = function() {
+        FB.init({
+          appId      : '248160252183079',
+          xfbml      : true,
+          version    : 'v2.5'
+        });
+      };
 
+      (function(d, s, id){
+         var js, fjs = d.getElementsByTagName(s)[0];
+         if (d.getElementById(id)) {return;}
+         js = d.createElement(s); js.id = id;
+         js.src = "//connect.facebook.net/en_US/sdk.js";
+         fjs.parentNode.insertBefore(js, fjs);
+       }(document, 'script', 'facebook-jssdk'));
+    </script>
   <div class="post-content" itemprop="articleBody">
     {{ content }}
   </div>
 
-  <!-- Place this tag where you want the share button to render. -->
+  <!-- Google+ -->
   <div class="g-plus" data-action="share"></div>
+  <!-- Twitter -->
+  <div><a href="https://twitter.com/share" class="twitter-share-button" data-via="anmaxvl">Tweet</a></div>
+  <!-- Facebook -->
+  <div class="fb-share-button" data-href="{{site.url}}{{page.url}}" data-layout="button_count" style="position: relative; top: -8px; left: 0px;"></div>
 
   <div id="disqus_thread"></div>
     <script>
@@ -37,5 +57,9 @@ layout: default
         })();
     </script>
     <noscript>Please enable JavaScript to view the <a href="https://disqus.com/?ref_noscript" rel="nofollow">comments powered by Disqus.</a></noscript>
+
+    <script id="dsq-count-scr" src="//anmaxvlgithubio.disqus.com/count.js" async></script>
+
+    <script>!function(d,s,id){var js,fjs=d.getElementsByTagName(s)[0];if(!d.getElementById(id)){js=d.createElement(s);js.id=id;js.src="//platform.twitter.com/widgets.js";fjs.parentNode.insertBefore(js,fjs);}}(document,"script","twitter-wjs");</script>
 </article>
-<script id="dsq-count-scr" src="//anmaxvlgithubio.disqus.com/count.js" async></script>
+
