@@ -14,8 +14,9 @@ baseurl: "" # the subpath of your site, e.g. /blog
 url: "http://anmaxvl.github.io" # the base hostname & protocol for your site
 twitter_username: anmaxvl
 github_username:  anmaxvl
-gems:
-    - jekyll-sitemap
 
 # Build settings
 markdown: kramdown
+
+gems:
+    - jekyll-sitemap

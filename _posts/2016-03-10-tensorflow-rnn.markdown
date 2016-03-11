@@ -1,6 +1,9 @@
 ---
-author: "Maksim An"
-title:	"TensorFlow and Recurrent Neural Networks."
+author: Maksim An
+title:	TensorFlow and Recurrent Neural Networks
+category: Coding
+tags: python tensorflow rnn
+summary: My attempt in using TensorFlow to predict sequences.
 date:	2016-03-10 13:34:00 +0900
 layout:	post
 ---
