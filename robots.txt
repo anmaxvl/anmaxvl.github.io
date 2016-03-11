@@ -2,6 +2,5 @@
 # www.google.com/support/webmasters/bin/answer.py?hl=en&answer=156449
 
 User-agent: *
-Sitemap: {{ site.url }}/sitemap.xml
-google-site-verification: googleab75a493d3b9d9aa.html
+Sitemap: {{ site.url }}/feed.xml
 
