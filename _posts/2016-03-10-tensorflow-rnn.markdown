@@ -68,7 +68,7 @@ outputs, states = rnn(cell, inputs, initial_state=initial_state,
 
 {% endhighlight %}
 
-Our goal is to make a pridiction what is the value going to be in `lag` steps, based on `seq_width` number of previous steps. 
+Our goal is to make a prediction what is the value going to be in `lag` steps, based on `seq_width` number of previous steps. 
 
 {% highlight python %}
 def gen_inputs(y, n_steps, offset, seq_width=10, lag=60):
@@ -121,17 +121,17 @@ And we get the figure below, with blue line being the target sequence and red li
 Now let's add some train ops.
 
 {% highlight python %}
-#softmax layer
-softmax_w = tf.get_variable('softmax_w', [num_hidden, 1])
-softmax_b = tf.get_variable('softmax_b', [1])
+#output layer
+W = tf.get_variable('W', [num_hidden, 1])
+b = tf.get_variable('b', [1])
 
 #network outputs is a list of tensors, but to make matrix multiplications we need a single tensor
 outputs = tf.reshape(tf.concat(1, outputs), [-1, num_hidden])
 
-softmax_output = tf.matmul(outputs, softmax_w) + softmax_b
+output = tf.matmul(outputs, W) + b
 
 #error function
-error = tf.pow(tf.reduce_sum(tf.pow(tf.sub(softmax_output, seq_target), 2)), .5)
+error = tf.pow(tf.reduce_sum(tf.pow(tf.sub(output, seq_target), 2)), .5)
 
 #learning rate
 lr = tf.Variable(0., trainable=False, name='lr')
