@@ -1,0 +1,217 @@
+<p><em><strong>TLDR</strong>:</em> Get some data, manipulate with it and with your model configs, get some results which look kind of <em>OK-ish</em> and be happy with it.</p>
+
+<p>This is a continuation of my previous post, however this time I tried to apply TF’s RNN on some real data.
+The data set I am going to be using is <a href="https://datamarket.com/data/list/?q=cat:ecd%20provider:tsdl">internet traffic data</a> from <a href="https://datamarket.com">datamarket.com</a>. The numbers are somewhat big, so we will need to do some preprocessing. I did a simple log of the data and normalized it between 0 and 5. The data is in CSV format with first column being the timestamp in the form <code class="highlighter-rouge">%Y-%m-%d %H-%M-%S</code> and the second column is the traffic data in bits. There shouldn’t be a problem reading the data, so I will skip it.</p>
+
+<p>Log+normalization</p>
+
+<figure class="highlight"><pre><code class="language-python" data-lang="python"><span class="k">def</span> <span class="nf">normalize</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">max_norm</span><span class="p">):</span>
+    <span class="c">#lets log our data</span>
+    <span class="n">logged_data</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">log</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">values</span><span class="p">)</span>
+    <span class="c">#and normalize between 0 and max_norm</span>
+    <span class="n">min_val</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="nb">min</span><span class="p">(</span><span class="n">logged_data</span><span class="p">)</span>
+    <span class="n">max_val</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="nb">max</span><span class="p">(</span><span class="n">logged_data</span><span class="p">)</span>
+    <span class="n">normalized</span> <span class="o">=</span> <span class="n">max_norm</span><span class="o">*</span><span class="p">(</span><span class="n">logged</span> <span class="o">-</span> <span class="n">min_val</span><span class="p">)</span><span class="o">/</span><span class="p">(</span><span class="n">max_val</span><span class="o">-</span><span class="n">min_val</span><span class="p">)</span>
+    <span class="bp">self</span><span class="o">.</span><span class="n">_values</span> <span class="o">=</span> <span class="n">normalized</span></code></pre></figure>
+
+<p>Lets see how it looks:</p>
+
+<p><img src="/assets/2016-03-25/normalized-data.png" alt="Normalized data" /></p>
+
+<p>The full code for preprocessing can be found <a href="https://github.com/anmaxvl/machine-learning/blob/master/data_loaders.py">here</a>.</p>
+
+<p>Lets start with defining a base class for our model. You can find it <a href="https://github.com/anmaxvl/machine-learning/blob/master/sequence_rnn.py">here</a> and it is basically a copy of google’s <a href="https://github.com/tensorflow/tensorflow/blob/master/tensorflow/models/rnn/ptb/ptb_word_lm.py">ptb model</a>.</p>
+
+<p>Lets move all of our initializations done in <a href="https://github.com/anmaxvl/machine-learning/blob/master/sine_wave.py">sine wave</a> model into <code class="highlighter-rouge">__init__</code>:</p>
+
+<figure class="highlight"><pre><code class="language-python" data-lang="python"><span class="c"># class name is TrafficRNN(SequenceRNN)</span>
+<span class="k">def</span> <span class="nf">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">is_training</span><span class="p">,</span> <span class="n">config</span><span class="p">):</span>
+    <span class="n">seq_width</span> <span class="o">=</span> <span class="n">config</span><span class="o">.</span><span class="n">seq_width</span>
+    <span class="n">n_steps</span> <span class="o">=</span> <span class="n">config</span><span class="o">.</span><span class="n">batch_size</span>
+    <span class="n">num_hidden</span> <span class="o">=</span> <span class="n">config</span><span class="o">.</span><span class="n">num_hidden</span>
+    <span class="n">num_layers</span> <span class="o">=</span> <span class="n">config</span><span class="o">.</span><span class="n">num_layers</span>
+
+    <span class="bp">self</span><span class="o">.</span><span class="n">_seq_input</span> <span class="o">=</span> <span class="n">tf</span><span class="o">.</span><span class="n">placeholder</span><span class="p">(</span><span class="n">tf</span><span class="o">.</span><span class="n">float32</span><span class="p">,</span> <span class="p">[</span><span class="n">n_steps</span><span class="p">,</span> <span class="n">seq_width</span><span class="p">])</span>
+    <span class="bp">self</span><span class="o">.</span><span class="n">_seq_target</span> <span class="o">=</span> <span class="n">tf</span><span class="o">.</span><span class="n">placeholder</span><span class="p">(</span><span class="n">tf</span><span class="o">.</span><span class="n">float32</span><span class="p">,</span> <span class="p">[</span><span class="n">n_steps</span><span class="p">,</span> <span class="mi">1</span><span class="p">])</span>
+    <span class="bp">self</span><span class="o">.</span><span class="n">_early_stop</span> <span class="o">=</span> <span class="n">tf</span><span class="o">.</span><span class="n">placeholder</span><span class="p">(</span><span class="n">tf</span><span class="o">.</span><span class="n">int32</span><span class="p">)</span>
+
+    <span class="n">inputs</span> <span class="o">=</span> <span class="p">[</span><span class="n">tf</span><span class="o">.</span><span class="n">reshape</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="n">seq_width</span><span class="p">))</span>
+                <span class="k">for</span> <span class="n">data</span> <span class="ow">in</span> <span class="n">tf</span><span class="o">.</span><span class="n">split</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="n">n_steps</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">seq_input</span><span class="p">)]</span>
+    <span class="n">initializer</span> <span class="o">=</span> <span class="n">tf</span><span class="o">.</span><span class="n">random_uniform_initializer</span><span class="p">(</span><span class="o">-.</span><span class="mi">1</span><span class="p">,</span> <span class="o">.</span><span class="mi">1</span><span class="p">)</span>
+
+    <span class="n">cell</span> <span class="o">=</span> <span class="n">rnn_cell</span><span class="o">.</span><span class="n">LSTMCell</span><span class="p">(</span><span class="n">num_hidden</span><span class="p">,</span> <span class="n">seq_width</span><span class="p">,</span> <span class="n">initializer</span><span class="o">=</span><span class="n">initializer</span><span class="p">)</span>
+    <span class="k">if</span> <span class="n">num_layers</span> <span class="o">&gt;</span> <span class="mi">1</span><span class="p">:</span>
+        <span class="n">cell</span> <span class="o">=</span> <span class="n">rnn_cell</span><span class="o">.</span><span class="n">MultiRNNCell</span><span class="p">([</span><span class="n">cell</span><span class="p">]</span><span class="o">*</span><span class="n">num_layers</span><span class="p">)</span>
+
+    <span class="bp">self</span><span class="o">.</span><span class="n">_initial_state</span> <span class="o">=</span> <span class="n">cell</span><span class="o">.</span><span class="n">zero_state</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="n">tf</span><span class="o">.</span><span class="n">float32</span><span class="p">)</span>
+    <span class="n">outputs</span><span class="p">,</span> <span class="n">states</span> <span class="o">=</span> <span class="n">rnn</span><span class="p">(</span><span class="n">cell</span><span class="p">,</span> <span class="n">inputs</span><span class="p">,</span>
+                          <span class="n">initial_state</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">_initial_state</span><span class="p">,</span>
+                          <span class="n">sequence_length</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">_early_stop</span><span class="p">)</span>
+    <span class="bp">self</span><span class="o">.</span><span class="n">_final_state</span> <span class="o">=</span> <span class="n">states</span>
+    <span class="n">outputs</span> <span class="o">=</span> <span class="n">tf</span><span class="o">.</span><span class="n">reshape</span><span class="p">(</span><span class="n">tf</span><span class="o">.</span><span class="n">concat</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="n">outputs</span><span class="p">),</span> <span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">,</span> <span class="n">num_hidden</span><span class="p">])</span>
+
+    <span class="n">W</span> <span class="o">=</span> <span class="n">tf</span><span class="o">.</span><span class="n">get_variable</span><span class="p">(</span><span class="s">'W'</span><span class="p">,</span> <span class="p">[</span><span class="n">num_hidden</span><span class="p">,</span> <span class="mi">1</span><span class="p">])</span>
+    <span class="n">b</span> <span class="o">=</span> <span class="n">tf</span><span class="o">.</span><span class="n">get_variable</span><span class="p">(</span><span class="s">'b'</span><span class="p">,</span> <span class="p">[</span><span class="mi">1</span><span class="p">])</span>
+    <span class="n">_output</span> <span class="o">=</span> <span class="n">tf</span><span class="o">.</span><span class="n">matmul</span><span class="p">(</span><span class="n">outputs</span><span class="p">,</span> <span class="n">W</span><span class="p">)</span> <span class="o">+</span> <span class="n">b</span>
+    <span class="bp">self</span><span class="o">.</span><span class="n">_output</span> <span class="o">=</span> <span class="n">_output</span>
+    <span class="n">error</span> <span class="o">=</span> <span class="n">tf</span><span class="o">.</span><span class="nb">pow</span><span class="p">(</span>
+                <span class="n">tf</span><span class="o">.</span><span class="n">reduce_sum</span><span class="p">(</span><span class="n">tf</span><span class="o">.</span><span class="nb">pow</span><span class="p">(</span><span class="n">tf</span><span class="o">.</span><span class="n">sub</span><span class="p">(</span><span class="n">_output</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">_seq_target</span><span class="p">),</span> <span class="mi">2</span><span class="p">)),</span> <span class="o">.</span><span class="mi">5</span><span class="p">)</span>
+    <span class="bp">self</span><span class="o">.</span><span class="n">_error</span> <span class="o">=</span> <span class="n">error</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="n">is_training</span><span class="p">:</span>
+        <span class="k">return</span>
+
+    <span class="bp">self</span><span class="o">.</span><span class="n">_lr</span> <span class="o">=</span> <span class="n">tf</span><span class="o">.</span><span class="n">Variable</span><span class="p">(</span><span class="mf">0.</span><span class="p">,</span> <span class="n">trainable</span><span class="o">=</span><span class="s">'False'</span><span class="p">,</span> <span class="n">name</span><span class="o">=</span><span class="s">'lr'</span><span class="p">)</span>
+    <span class="n">tvars</span> <span class="o">=</span> <span class="n">tf</span><span class="o">.</span><span class="n">trainable_variables</span><span class="p">()</span>
+    <span class="n">grads</span><span class="p">,</span> <span class="n">_</span> <span class="o">=</span> <span class="n">tf</span><span class="o">.</span><span class="n">clip_by_global_norm</span><span class="p">(</span><span class="n">tf</span><span class="o">.</span><span class="n">gradients</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_error</span><span class="p">,</span> <span class="n">tvars</span><span class="p">),</span>
+                                      <span class="n">config</span><span class="o">.</span><span class="n">max_grad_norm</span><span class="p">)</span>
+
+    <span class="n">optimizer</span> <span class="o">=</span> <span class="n">tf</span><span class="o">.</span><span class="n">train</span><span class="o">.</span><span class="n">AdamOptimizer</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_lr</span><span class="p">)</span>
+
+    <span class="bp">self</span><span class="o">.</span><span class="n">_train_op</span> <span class="o">=</span> <span class="n">optimizer</span><span class="o">.</span><span class="n">apply_gradients</span><span class="p">(</span><span class="nb">zip</span><span class="p">(</span><span class="n">grads</span><span class="p">,</span> <span class="n">tvars</span><span class="p">))</span>
+
+<span class="c"># Lets add an output property as well</span>
+<span class="nd">@property</span>
+<span class="k">def</span> <span class="nf">output</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+    <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_output</span></code></pre></figure>
+
+<p>Everything was pretty much the same as in the previous post, with the only difference that now we are not using global variables, but object properties instead. For example:</p>
+
+<figure class="highlight"><pre><code class="language-python" data-lang="python"><span class="n">m</span> <span class="o">=</span> <span class="n">TrafficRNN</span><span class="p">(</span><span class="n">is_training</span><span class="o">=</span><span class="bp">True</span><span class="p">,</span> <span class="n">config</span><span class="p">)</span>
+<span class="n">session</span><span class="o">.</span><span class="n">run</span><span class="p">([</span><span class="n">m</span><span class="o">.</span><span class="n">train_op</span><span class="p">,</span> <span class="n">m</span><span class="o">.</span><span class="n">output</span><span class="p">],</span>
+            <span class="n">feed_dict</span><span class="o">=</span><span class="p">{</span><span class="n">m</span><span class="o">.</span><span class="n">seq_input</span><span class="p">:</span><span class="n">_input</span><span class="p">,</span> <span class="n">m</span><span class="o">.</span><span class="n">seq_target</span><span class="p">:</span><span class="n">_target</span><span class="p">})</span></code></pre></figure>
+
+<p>Cool, now lets continue. I am going to use the data with 5 min interval measurements. So I want my model to predict the internet traffic in some future time based on the value(s) in the past. The question is how far into the future? And how much of the information from the past are we going to use? This is going to affect the parameters of our model. This is how my configuration looks like:</p>
+
+<figure class="highlight"><pre><code class="language-python" data-lang="python"><span class="k">class</span> <span class="nc">TrafficRNNConfig</span><span class="p">(</span><span class="nb">object</span><span class="p">):</span>
+    <span class="n">start</span> <span class="o">=</span> <span class="mi">0</span>               <span class="c"># The index of the first data entry we are going</span>
+                            <span class="c"># to use</span>
+    <span class="n">window_size</span> <span class="o">=</span> <span class="mi">12</span>        <span class="c"># Number of values in the "past". For 5-min interval</span>
+                            <span class="c"># data this is going to be one hour interval</span>
+    <span class="n">n_steps</span> <span class="o">=</span> <span class="mi">4032</span>          <span class="c"># Number of samples in the training set</span>
+    <span class="n">use_1st_diffs</span> <span class="o">=</span> <span class="bp">True</span>    <span class="c"># Use first order differences or not</span>
+    <span class="n">use_2nd_diffs</span> <span class="o">=</span> <span class="bp">False</span>   <span class="c"># Use second order differences or not</span>
+    <span class="n">lag</span> <span class="o">=</span> <span class="mi">48</span>                <span class="c"># How far into the future do we want to predict.</span>
+                            <span class="c"># For 5 min data this is 4 hours</span>
+    <span class="n">batch_size</span> <span class="o">=</span> <span class="mi">48</span>         <span class="c"># Batch size</span>
+
+    <span class="n">max_epoch</span> <span class="o">=</span> <span class="mi">300</span>         <span class="c"># Number of epochs during training</span>
+    <span class="n">num_hidden</span> <span class="o">=</span> <span class="mi">150</span>        <span class="c"># Number of hidden nodes</span>
+    <span class="n">num_layers</span> <span class="o">=</span> <span class="mi">1</span>          <span class="c"># Number of layers</span></code></pre></figure>
+
+<p>We have our model and its configuration, now we need to train it. Lets make a function that will do that for us:</p>
+
+<figure class="highlight"><pre><code class="language-python" data-lang="python"><span class="c"># Runs the model on some data (training or testing)</span>
+<span class="k">def</span> <span class="nf">run_epoch</span><span class="p">(</span><span class="n">session</span><span class="p">,</span> <span class="n">m</span><span class="p">,</span> <span class="n">data</span><span class="p">,</span> <span class="n">eval_op</span><span class="p">,</span> <span class="n">config</span><span class="p">):</span>
+    <span class="s">"""
+    session:    TensorFlow session
+    m:          model
+    data:       input data
+    eval_op:    train op or nothing
+    config:     model config
+    """</span>
+    <span class="n">state</span> <span class="o">=</span> <span class="n">m</span><span class="o">.</span><span class="n">initial_state</span><span class="o">.</span><span class="nb">eval</span><span class="p">()</span>
+
+    <span class="n">seq_input</span> <span class="o">=</span> <span class="n">data</span><span class="p">[</span><span class="s">'seq_input'</span><span class="p">]</span>
+    <span class="n">seq_target</span> <span class="o">=</span> <span class="n">data</span><span class="p">[</span><span class="s">'seq_target'</span><span class="p">]</span>
+    <span class="n">early_stop</span> <span class="o">=</span> <span class="n">data</span><span class="p">[</span><span class="s">'early_stop'</span><span class="p">]</span>
+
+    <span class="n">epoch_error</span> <span class="o">=</span> <span class="mf">0.</span>
+    <span class="n">rnn_outs</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">([])</span>
+    <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">config</span><span class="o">.</span><span class="n">n_steps</span><span class="o">/</span><span class="n">config</span><span class="o">.</span><span class="n">batch_size</span><span class="p">):</span>
+        <span class="c"># Make batches</span>
+        <span class="n">_seq_input</span> <span class="o">=</span> <span class="n">seq_input</span><span class="p">[</span><span class="n">i</span><span class="o">*</span><span class="n">config</span><span class="o">.</span><span class="n">batch_size</span><span class="p">:(</span><span class="n">i</span><span class="o">+</span><span class="mi">1</span><span class="p">)</span><span class="o">*</span><span class="n">config</span><span class="o">.</span><span class="n">batch_size</span><span class="p">][:]</span>
+        <span class="n">_seq_target</span> <span class="o">=</span> <span class="n">seq_target</span><span class="p">[</span><span class="n">i</span><span class="o">*</span><span class="n">config</span><span class="o">.</span><span class="n">batch_size</span><span class="p">:(</span><span class="n">i</span><span class="o">+</span><span class="mi">1</span><span class="p">)</span><span class="o">*</span><span class="n">config</span><span class="o">.</span><span class="n">batch_size</span><span class="p">][:]</span>
+        <span class="n">_early_stop</span> <span class="o">=</span> <span class="n">early_stop</span>
+        <span class="n">feed</span> <span class="o">=</span> <span class="p">{</span><span class="n">m</span><span class="o">.</span><span class="n">seq_input</span><span class="p">:</span><span class="n">_seq_input</span><span class="p">,</span> <span class="n">m</span><span class="o">.</span><span class="n">seq_target</span><span class="p">:</span><span class="n">_seq_target</span><span class="p">,</span>
+                <span class="n">m</span><span class="o">.</span><span class="n">early_stop</span><span class="p">:</span><span class="n">_early_stop</span><span class="p">,</span> <span class="n">m</span><span class="o">.</span><span class="n">initial_state</span><span class="p">:</span><span class="n">state</span><span class="p">}</span>
+        <span class="c"># Feed data to the model</span>
+        <span class="n">step_error</span><span class="p">,</span> <span class="n">state</span><span class="p">,</span> <span class="n">step_outs</span><span class="p">,</span> <span class="n">_</span> <span class="o">=</span> <span class="n">session</span><span class="o">.</span><span class="n">run</span><span class="p">([</span><span class="n">m</span><span class="o">.</span><span class="n">error</span><span class="p">,</span> <span class="n">m</span><span class="o">.</span><span class="n">final_state</span><span class="p">,</span>
+                                                            <span class="n">m</span><span class="o">.</span><span class="n">output</span><span class="p">,</span> <span class="n">eval_op</span><span class="p">],</span>
+                                                      <span class="n">feed_dict</span><span class="o">=</span><span class="n">feed</span><span class="p">)</span>
+        <span class="c"># Accumulate total error</span>
+        <span class="n">epoch_error</span> <span class="o">+=</span> <span class="n">step_error</span>
+        <span class="n">rnn_outs</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">rnn_outs</span><span class="p">,</span> <span class="n">step_outs</span><span class="p">)</span>
+
+    <span class="k">return</span> <span class="n">epoch_error</span><span class="p">,</span> <span class="n">rnn_outs</span></code></pre></figure>
+
+<p>As the function name states: it runs one epoch on data, if the eval_op is a train_op it also performs trainnig of the model, otherwise it just feeds the data to the model and gets the outputs.</p>
+
+<p>Now a main function where we do all initialization, model training and evaluation:</p>
+
+<figure class="highlight"><pre><code class="language-python" data-lang="python"><span class="k">def</span> <span class="nf">main</span><span class="p">(</span><span class="n">unused_args</span><span class="p">):</span>
+    <span class="n">tdLoader</span> <span class="o">=</span> <span class="n">TrafficDataLoader</span><span class="p">(</span>
+            <span class="s">'internet-data/data/internet-traffic-11-cities-5min.csv'</span><span class="p">,</span>
+            <span class="n">max_norm</span><span class="o">=</span><span class="mf">5.</span>
+            <span class="p">)</span>
+    <span class="n">tdConfig</span> <span class="o">=</span> <span class="n">TrafficDataConfig</span><span class="p">()</span>
+    <span class="n">tmConfig</span> <span class="o">=</span> <span class="n">TrafficRNNConfig</span><span class="p">()</span>
+    <span class="n">batch_size</span> <span class="o">=</span> <span class="n">tmConfig</span><span class="o">.</span><span class="n">batch_size</span>
+
+    <span class="n">seq_input</span><span class="p">,</span> <span class="n">seq_target</span> <span class="o">=</span> <span class="n">tdLoader</span><span class="o">.</span><span class="n">get_rnn_input</span><span class="p">(</span><span class="n">tdConfig</span><span class="p">)</span>
+
+    <span class="n">data</span> <span class="o">=</span> <span class="nb">dict</span><span class="p">()</span>
+    <span class="n">data</span><span class="p">[</span><span class="s">'seq_input'</span><span class="p">]</span> <span class="o">=</span> <span class="n">seq_input</span>
+    <span class="n">data</span><span class="p">[</span><span class="s">'seq_target'</span><span class="p">]</span> <span class="o">=</span> <span class="n">seq_target</span>
+    <span class="n">data</span><span class="p">[</span><span class="s">'early_stop'</span><span class="p">]</span> <span class="o">=</span> <span class="n">tdConfig</span><span class="o">.</span><span class="n">batch_size</span>
+
+    <span class="n">is_training</span> <span class="o">=</span> <span class="bp">True</span>
+
+    <span class="k">with</span> <span class="n">tf</span><span class="o">.</span><span class="n">Graph</span><span class="p">()</span><span class="o">.</span><span class="n">as_default</span><span class="p">(),</span> <span class="n">tf</span><span class="o">.</span><span class="n">Session</span><span class="p">()</span> <span class="k">as</span> <span class="n">session</span><span class="p">:</span>
+        <span class="n">model</span> <span class="o">=</span> <span class="n">TrafficRNN</span><span class="p">(</span><span class="n">is_training</span><span class="o">=</span><span class="bp">True</span><span class="p">,</span> <span class="n">config</span><span class="o">=</span><span class="n">tmConfig</span><span class="p">)</span>
+        <span class="n">tf</span><span class="o">.</span><span class="n">initialize_all_variables</span><span class="p">()</span><span class="o">.</span><span class="n">run</span><span class="p">()</span>
+        <span class="n">decay</span> <span class="o">=</span> <span class="o">.</span><span class="mi">8</span>
+        <span class="k">if</span> <span class="n">is_training</span><span class="p">:</span>
+            <span class="n">lr_value</span> <span class="o">=</span> <span class="mf">1e-3</span>
+            <span class="k">for</span> <span class="n">epoch</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">tmConfig</span><span class="o">.</span><span class="n">max_epoch</span><span class="p">):</span>
+                <span class="c"># You can implement a learning rate decay here. Didn't quite</span>
+                <span class="c"># work for me though</span>
+                <span class="k">if</span> <span class="n">epoch</span> <span class="o">&gt;</span> <span class="mi">10</span><span class="p">:</span>
+                    <span class="n">lr_value</span> <span class="o">=</span> <span class="mf">1e-3</span>
+                <span class="k">elif</span> <span class="n">epoch</span> <span class="o">&gt;</span> <span class="mi">75</span><span class="p">:</span>
+                    <span class="n">lr_value</span> <span class="o">=</span> <span class="mf">1e-4</span>
+                <span class="k">elif</span> <span class="n">epoch</span> <span class="o">&gt;</span> <span class="mi">100</span><span class="p">:</span>
+                    <span class="n">lr_value</span> <span class="o">=</span> <span class="mf">1e-6</span>
+                <span class="k">elif</span> <span class="n">epoch</span> <span class="o">&gt;</span> <span class="mi">200</span><span class="p">:</span>
+                    <span class="n">lr_value</span> <span class="o">=</span> <span class="mf">1e-7</span>
+                <span class="k">elif</span> <span class="n">epoch</span> <span class="o">&gt;</span> <span class="mi">250</span><span class="p">:</span>
+                    <span class="n">lr_value</span> <span class="o">=</span> <span class="mf">1e-8</span>
+                <span class="n">model</span><span class="o">.</span><span class="n">assign_lr</span><span class="p">(</span><span class="n">session</span><span class="p">,</span> <span class="n">lr_value</span><span class="p">)</span>
+                <span class="n">net_outs_all</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">([])</span>
+                <span class="n">error</span><span class="p">,</span> <span class="n">net_outs_all</span> <span class="o">=</span> <span class="n">run_epoch</span><span class="p">(</span><span class="n">session</span><span class="p">,</span> <span class="n">model</span><span class="p">,</span> <span class="n">data</span><span class="p">,</span>
+                                                <span class="n">model</span><span class="o">.</span><span class="n">train_op</span><span class="p">,</span> <span class="n">tdConfig</span><span class="p">)</span>
+                <span class="n">error</span><span class="p">,</span> <span class="n">net_outs_all</span> <span class="o">=</span> <span class="n">run_epoch</span><span class="p">(</span><span class="n">session</span><span class="p">,</span> <span class="n">model</span><span class="p">,</span> <span class="n">data</span><span class="p">,</span>
+                                                <span class="n">tf</span><span class="o">.</span><span class="n">no_op</span><span class="p">(),</span> <span class="n">tdConfig</span><span class="p">)</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">saved_vars</span> <span class="o">=</span> <span class="s">'internet-data/saved-models/traffic-rnn-hid-'</span> <span class="o">+</span>
+                         <span class="s">'</span><span class="si">%</span><span class="s">d-batch-</span><span class="si">%</span><span class="s">d-window-</span><span class="si">%</span><span class="s">d-lag-</span><span class="si">%</span><span class="s">d.chkpnt-</span><span class="si">%</span><span class="s">d'</span> <span class="o">%</span>
+                                <span class="p">(</span><span class="n">tmConfig</span><span class="o">.</span><span class="n">num_hidden</span><span class="p">,</span> <span class="n">tdConfig</span><span class="o">.</span><span class="n">batch_size</span><span class="p">,</span>
+                                 <span class="n">tdConfig</span><span class="o">.</span><span class="n">window_size</span><span class="p">,</span> <span class="n">tdConfig</span><span class="o">.</span><span class="n">lag</span><span class="p">,</span>
+                                 <span class="n">tmConfig</span><span class="o">.</span><span class="n">max_epoch</span><span class="o">-</span><span class="mi">1</span><span class="p">)</span>
+            <span class="c"># is_training == False =&gt; restore model from backup</span>
+            <span class="n">saver</span><span class="o">.</span><span class="n">restore</span><span class="p">(</span><span class="n">session</span><span class="p">,</span> <span class="n">saved_vars</span><span class="p">)</span>
+
+
+        <span class="n">train_error</span><span class="p">,</span> <span class="n">train_outs_all</span> <span class="o">=</span> <span class="n">run_epoch</span><span class="p">(</span><span class="n">session</span><span class="p">,</span> <span class="n">model</span><span class="p">,</span> <span class="n">data</span><span class="p">,</span>
+                                                <span class="n">tf</span><span class="o">.</span><span class="n">no_op</span><span class="p">(),</span> <span class="n">tdConfig</span><span class="p">)</span>
+
+        <span class="n">testDataConfig</span> <span class="o">=</span> <span class="n">TestConfig</span><span class="p">()</span>
+        <span class="n">test_seq_input</span><span class="p">,</span> <span class="n">test_seq_target</span> <span class="o">=</span> <span class="n">tdLoader</span><span class="o">.</span><span class="n">get_rnn_input</span><span class="p">(</span><span class="n">testDataConfig</span><span class="p">)</span>
+
+        <span class="n">test_data</span> <span class="o">=</span> <span class="nb">dict</span><span class="p">()</span>
+        <span class="n">test_outs_all</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">([])</span>
+        <span class="n">test_data</span><span class="p">[</span><span class="s">'seq_input'</span><span class="p">]</span> <span class="o">=</span> <span class="n">test_seq_input</span>
+        <span class="n">test_data</span><span class="p">[</span><span class="s">'seq_target'</span><span class="p">]</span> <span class="o">=</span> <span class="n">test_seq_target</span>
+        <span class="n">test_data</span><span class="p">[</span><span class="s">'early_stop'</span><span class="p">]</span> <span class="o">=</span> <span class="n">testDataConfig</span><span class="o">.</span><span class="n">batch_size</span>
+        <span class="n">test_error</span><span class="p">,</span> <span class="n">test_outs_all</span> <span class="o">=</span> <span class="n">run_epoch</span><span class="p">(</span><span class="n">session</span><span class="p">,</span> <span class="n">model</span><span class="p">,</span> <span class="n">test_data</span><span class="p">,</span>
+                                              <span class="n">tf</span><span class="o">.</span><span class="n">no_op</span><span class="p">(),</span> <span class="n">testDataConfig</span><span class="p">)</span>
+
+        <span class="k">print</span> <span class="s">'Test error: </span><span class="si">%</span><span class="s">s'</span> <span class="o">%</span> <span class="n">test_error</span>
+        <span class="n">plt</span><span class="o">.</span><span class="n">figure</span><span class="p">(</span><span class="mi">2</span><span class="p">,</span> <span class="n">figsize</span><span class="o">=</span><span class="p">(</span><span class="mi">20</span><span class="p">,</span><span class="mi">10</span><span class="p">))</span>
+        <span class="n">plt</span><span class="o">.</span><span class="n">plot</span><span class="p">(</span><span class="nb">xrange</span><span class="p">(</span><span class="n">tdConfig</span><span class="o">.</span><span class="n">n_steps</span><span class="p">),</span> <span class="n">seq_target</span><span class="p">,</span> <span class="s">'b-'</span><span class="p">,</span>
+            <span class="nb">xrange</span><span class="p">(</span><span class="n">tdConfig</span><span class="o">.</span><span class="n">n_steps</span><span class="p">),</span> <span class="n">train_outs_all</span><span class="p">,</span> <span class="s">'g--'</span><span class="p">)</span>
+        <span class="n">plt</span><span class="o">.</span><span class="n">plot</span><span class="p">(</span><span class="nb">xrange</span><span class="p">(</span><span class="n">tdConfig</span><span class="o">.</span><span class="n">n_steps</span><span class="o">-</span><span class="mi">24</span><span class="p">,</span>
+            <span class="n">tdConfig</span><span class="o">.</span><span class="n">n_steps</span><span class="o">+</span><span class="n">testDataConfig</span><span class="o">.</span><span class="n">n_steps</span><span class="o">-</span><span class="mi">24</span><span class="p">),</span> <span class="n">test_seq_target</span><span class="p">,</span> <span class="s">'b-'</span><span class="p">)</span>
+        <span class="n">plt</span><span class="o">.</span><span class="n">plot</span><span class="p">(</span><span class="nb">xrange</span><span class="p">(</span><span class="n">tdConfig</span><span class="o">.</span><span class="n">n_steps</span><span class="o">-</span><span class="mi">24</span><span class="p">,</span>
+            <span class="n">tdConfig</span><span class="o">.</span><span class="n">n_steps</span><span class="o">+</span><span class="n">testDataConfig</span><span class="o">.</span><span class="n">n_steps</span><span class="o">-</span><span class="mi">24</span><span class="p">),</span> <span class="n">test_outs_all</span><span class="p">,</span> <span class="s">'r--'</span><span class="p">)</span>
+        <span class="n">plt</span><span class="o">.</span><span class="n">show</span><span class="p">()</span></code></pre></figure>
+

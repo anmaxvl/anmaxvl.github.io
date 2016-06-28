@@ -1,0 +1,170 @@
+<p>Google open sourced their library for numerical computations in the end of the last year: <a href="https://www.tensorflow.org/">TensorFlow</a>. It comes with a nice python API and documentation. I know that there are other libraries which may be simpler or even perform better (in terms of speed), but it’s Google, you know, and I am one of those <code class="highlighter-rouge">#google#only#does#great#things</code> boys (jk). It just happened that it was open sourced right at the time I got interested in machine learning again.</p>
+
+<p>To start things off, I decided to look into examples and tutorials Google provided. They work and all, but guess what? it is actually not that simple to jump straight into developing something on your own (at least that was my case). So I decided to start from simple things and going to share my experience with you.</p>
+
+<p><a href="https://www.reddit.com/r/MachineLearning/comments/3sok8k/tensorflow_basic_rnn_example_with_variable_length/">This</a> post on reddit is a good place to start once you figured out TensorFlow’s basics. Make sure to play around with variables, tensors and sessions first. So what we have in there? The code generates a random sequence, splits it into batches and feeds a LSTM RNN. If you are not sure what are those, make sure to read <a href="http://colah.github.io/posts/2015-08-Understanding-LSTMs/">colah’s blog</a>, he gives a great explanation and logic behind LSTMs.</p>
+
+<p>Feeding a random sequence might not be very interesting, so lets generate one:</p>
+
+<figure class="highlight"><pre><code class="language-python" data-lang="python"><span class="kn">import</span> <span class="nn">numpy</span> <span class="kn">as</span> <span class="nn">np</span>
+<span class="kn">import</span> <span class="nn">matplotlib.pylab</span> <span class="kn">as</span> <span class="nn">plt</span>
+
+<span class="k">def</span> <span class="nf">gen_seq</span><span class="p">():</span>
+	<span class="n">x</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">arange</span><span class="p">(</span><span class="mf">0.</span><span class="p">,</span> <span class="n">np</span><span class="o">.</span><span class="n">pi</span><span class="o">*</span><span class="mi">12</span><span class="p">,</span> <span class="mf">0.03</span><span class="p">)</span>
+	<span class="n">bell</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">exp</span><span class="p">(</span><span class="o">-</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">sin</span><span class="p">(</span><span class="n">x</span><span class="o">-</span><span class="n">np</span><span class="o">.</span><span class="n">pi</span><span class="o">/</span><span class="mi">2</span><span class="p">)</span><span class="o">-</span><span class="mi">2</span><span class="o">*</span><span class="n">np</span><span class="o">.</span><span class="n">pi</span><span class="p">)</span><span class="o">**</span><span class="mi">2</span><span class="o">/</span><span class="mf">9.</span><span class="p">)</span>
+	<span class="n">y</span> <span class="o">=</span> <span class="mi">100</span><span class="o">*</span><span class="n">np</span><span class="o">.</span><span class="n">sin</span><span class="p">(</span><span class="mi">8</span><span class="o">*</span><span class="n">x</span><span class="p">)</span><span class="o">*</span><span class="n">bell</span>
+	<span class="n">y</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">reshape</span><span class="p">(</span><span class="n">y</span><span class="p">,</span> <span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">y</span><span class="p">),</span> <span class="mi">1</span><span class="p">))</span>
+	
+	<span class="n">plt</span><span class="o">.</span><span class="n">plot</span><span class="p">(</span><span class="n">x</span><span class="p">,</span> <span class="n">y</span><span class="p">)</span>
+	<span class="n">plt</span><span class="o">.</span><span class="n">show</span><span class="p">()</span>
+
+	<span class="k">return</span> <span class="n">x</span><span class="p">,</span> <span class="n">y</span></code></pre></figure>
+
+<p>And we will get something like this:
+<img src="/assets/sequence.png" alt="Sequence plot" /></p>
+
+<p>Good, we have a sequence now, and we want to feed it to the network. Following the reddit example, lets build our own TensorFlow computation graph.</p>
+
+<figure class="highlight"><pre><code class="language-python" data-lang="python"><span class="kn">import</span> <span class="nn">tensorflow</span> <span class="kn">as</span> <span class="nn">tf</span>
+<span class="kn">from</span> <span class="nn">tensorflow.models.rnn.rnn</span> <span class="kn">import</span> <span class="o">*</span>
+
+<span class="n">x</span><span class="p">,</span> <span class="n">y</span> <span class="o">=</span> <span class="n">gen_seq</span><span class="p">()</span>
+<span class="c">#number of hidden units in RNN</span>
+<span class="n">num_hidden</span> <span class="o">=</span> <span class="mi">10</span>
+<span class="c">#sequence width</span>
+<span class="n">seq_width</span> <span class="o">=</span> <span class="mi">10</span>
+<span class="c">#we are going to train on the first half of the sequence</span>
+<span class="n">n_steps</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="n">x</span><span class="p">)</span><span class="o">/</span><span class="mi">2</span>
+
+<span class="c">#we are not going to use batches</span>
+<span class="c">#our inputs</span>
+<span class="n">seq_input</span> <span class="o">=</span> <span class="n">tf</span><span class="o">.</span><span class="n">placeholder</span><span class="p">(</span><span class="n">tf</span><span class="o">.</span><span class="n">float32</span><span class="p">,</span> <span class="p">[</span><span class="n">n_steps</span><span class="p">,</span> <span class="n">seq_width</span><span class="p">])</span>
+<span class="c">#targets, which will be used later during training</span>
+<span class="n">seq_target</span> <span class="o">=</span> <span class="n">tf</span><span class="o">.</span><span class="n">placeholder</span><span class="p">(</span><span class="n">tf</span><span class="o">.</span><span class="n">float32</span><span class="p">,</span> <span class="p">[</span><span class="n">n_steps</span><span class="p">,</span> <span class="mi">1</span><span class="p">])</span>
+<span class="c">#early stop to pass a sequence length if needed to save computation time</span>
+<span class="n">early_stop</span> <span class="o">=</span> <span class="n">tf</span><span class="o">.</span><span class="n">placeholder</span><span class="p">(</span><span class="n">tf</span><span class="o">.</span><span class="n">int32</span><span class="p">)</span>
+
+<span class="c">#tensorflow's rnn need a list of tensors instead of a single tensor</span>
+<span class="n">inputs</span> <span class="o">=</span> <span class="p">[</span><span class="n">tf</span><span class="o">.</span><span class="n">reshape</span><span class="p">(</span><span class="n">i</span><span class="p">,</span> <span class="p">(</span><span class="mi">1</span><span class="p">,</span><span class="n">seq_width</span><span class="p">))</span> <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="n">tf</span><span class="o">.</span><span class="n">split</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="n">n_steps</span><span class="p">,</span> <span class="n">seq_input</span><span class="p">)]</span>
+
+<span class="n">initializer</span> <span class="o">=</span> <span class="n">tf</span><span class="o">.</span><span class="n">random_uniform_initializer</span><span class="p">(</span><span class="o">-.</span><span class="mi">1</span><span class="p">,</span> <span class="o">.</span><span class="mi">1</span><span class="p">)</span>
+<span class="c">#LSTM cell</span>
+<span class="n">cell</span> <span class="o">=</span> <span class="n">rnn_cell</span><span class="o">.</span><span class="n">LSTMCell</span><span class="p">(</span><span class="n">num_hidden</span><span class="p">,</span> <span class="n">seq_width</span><span class="p">,</span> <span class="n">initializer</span><span class="o">=</span><span class="n">initializer</span><span class="p">)</span>
+<span class="n">initial_state</span> <span class="o">=</span> <span class="n">cell</span><span class="o">.</span><span class="n">zero_state</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="n">tf</span><span class="o">.</span><span class="n">float32</span><span class="p">)</span>
+
+<span class="c">#feeding inputs to rnn</span>
+<span class="n">outputs</span><span class="p">,</span> <span class="n">states</span> <span class="o">=</span> <span class="n">rnn</span><span class="p">(</span><span class="n">cell</span><span class="p">,</span> <span class="n">inputs</span><span class="p">,</span> <span class="n">initial_state</span><span class="o">=</span><span class="n">initial_state</span><span class="p">,</span> 
+						<span class="n">sequence_length</span><span class="o">=</span><span class="n">early_stop</span><span class="p">)</span></code></pre></figure>
+
+<p>Our goal is to make a prediction what is the value going to be in <code class="highlighter-rouge">lag</code> steps, based on <code class="highlighter-rouge">seq_width</code> number of previous steps.</p>
+
+<figure class="highlight"><pre><code class="language-python" data-lang="python"><span class="k">def</span> <span class="nf">gen_inputs</span><span class="p">(</span><span class="n">y</span><span class="p">,</span> <span class="n">n_steps</span><span class="p">,</span> <span class="n">offset</span><span class="p">,</span> <span class="n">seq_width</span><span class="o">=</span><span class="mi">10</span><span class="p">,</span> <span class="n">lag</span><span class="o">=</span><span class="mi">60</span><span class="p">):</span>
+	<span class="n">seq_input</span> <span class="o">=</span> <span class="p">[]</span>
+	<span class="n">seq_target</span> <span class="o">=</span> <span class="p">[]</span>
+	
+	<span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">offset</span><span class="p">,</span> <span class="n">offset</span><span class="o">+</span><span class="n">n_steps</span><span class="p">):</span>
+		<span class="n">window</span><span class="o">=</span><span class="p">[]</span>
+		<span class="k">for</span> <span class="n">j</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">seq_width</span><span class="p">):</span>
+			<span class="k">if</span> <span class="n">i</span><span class="o">+</span><span class="n">j</span><span class="o">&lt;</span><span class="nb">len</span><span class="p">(</span><span class="n">y</span><span class="p">):</span>
+				<span class="n">window</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">y</span><span class="p">[</span><span class="n">i</span><span class="o">+</span><span class="n">j</span><span class="p">])</span>
+			<span class="k">else</span><span class="p">:</span>
+				<span class="n">window</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="mi">0</span><span class="p">)</span>
+		<span class="n">seq_input</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">window</span><span class="p">)</span>
+		<span class="k">if</span> <span class="n">i</span><span class="o">+</span><span class="n">lag</span><span class="o">+</span><span class="n">seq_width</span> <span class="o">&lt;</span> <span class="nb">len</span><span class="p">(</span><span class="n">y</span><span class="p">):</span>
+			<span class="n">seq_target</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">y</span><span class="p">[</span><span class="n">i</span><span class="o">+</span><span class="n">lag</span><span class="o">+</span><span class="n">seq_width</span><span class="p">])</span>
+		<span class="k">else</span><span class="p">:</span>
+			<span class="n">seq_target</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="mi">0</span><span class="p">)</span>
+	
+	<span class="n">seq_input</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">reshape</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">(</span><span class="n">seq_input</span><span class="p">),</span> <span class="p">(</span><span class="o">-</span><span class="mi">1</span><span class="p">,</span> <span class="n">seq_width</span><span class="p">))</span>
+	<span class="n">seq_target</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">reshape</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">(</span><span class="n">seq_target</span><span class="p">),</span> <span class="p">(</span><span class="o">-</span><span class="mi">1</span><span class="p">,</span> <span class="mi">1</span><span class="p">))</span>
+
+	<span class="k">return</span> <span class="n">seq_input</span><span class="p">,</span> <span class="n">seq_target</span></code></pre></figure>
+
+<p>Lets generate inputs and targets and feed them to our rnn:</p>
+
+<figure class="highlight"><pre><code class="language-python" data-lang="python"><span class="n">train_input</span><span class="p">,</span> <span class="n">train_target</span> <span class="o">=</span> <span class="n">gen_inputs</span><span class="p">(</span><span class="n">y</span><span class="p">,</span> <span class="n">n_steps</span><span class="p">,</span> <span class="n">offset</span><span class="o">=</span><span class="mi">0</span><span class="p">,</span> <span class="n">seq_width</span><span class="o">=</span><span class="mi">10</span><span class="p">,</span> <span class="n">lag</span><span class="o">=</span><span class="mi">60</span><span class="p">)</span>
+
+<span class="c">#init op</span>
+<span class="n">init</span> <span class="o">=</span> <span class="n">tf</span><span class="o">.</span><span class="n">initialize_all_variables</span><span class="p">()</span>
+
+<span class="n">session</span> <span class="o">=</span> <span class="n">tf</span><span class="o">.</span><span class="n">Session</span><span class="p">()</span>
+<span class="c">#actual initialization</span>
+<span class="n">session</span><span class="o">.</span><span class="n">run</span><span class="p">(</span><span class="n">init</span><span class="p">)</span>
+<span class="c">#feed dictionary</span>
+<span class="n">feed</span> <span class="o">=</span> <span class="p">{</span><span class="n">seq_input</span><span class="p">:</span><span class="n">train_input</span><span class="p">,</span> <span class="n">seq_target</span><span class="p">:</span><span class="n">train_target</span><span class="p">,</span> <span class="n">early_stop</span><span class="p">:</span><span class="n">n_steps</span><span class="p">}</span>
+
+<span class="n">net_outs</span> <span class="o">=</span> <span class="n">session</span><span class="o">.</span><span class="n">run</span><span class="p">(</span><span class="n">output</span><span class="p">,</span> <span class="n">feed_dict</span><span class="o">=</span><span class="n">feed</span><span class="p">)</span>
+
+<span class="n">plt</span><span class="o">.</span><span class="n">plot</span><span class="p">(</span><span class="n">x</span><span class="p">[:</span><span class="n">n_steps</span><span class="p">],</span> <span class="n">train_target</span><span class="p">,</span> <span class="s">'b-'</span><span class="p">,</span> <span class="n">x</span><span class="p">[:</span><span class="n">n_steps</span><span class="p">],</span> <span class="n">net_outs</span><span class="p">,</span> <span class="s">'r-'</span><span class="p">)</span>
+<span class="n">plt</span><span class="o">.</span><span class="n">show</span><span class="p">()</span></code></pre></figure>
+
+<p>And we get the figure below, with blue line being the target sequence and red line being the network output:</p>
+
+<p><img src="/assets/sequence-and-network-output.png" alt="Sequence and initial output" /></p>
+
+<p>Now let’s add some train ops.</p>
+
+<figure class="highlight"><pre><code class="language-python" data-lang="python"><span class="c">#output layer</span>
+<span class="n">W</span> <span class="o">=</span> <span class="n">tf</span><span class="o">.</span><span class="n">get_variable</span><span class="p">(</span><span class="s">'W'</span><span class="p">,</span> <span class="p">[</span><span class="n">num_hidden</span><span class="p">,</span> <span class="mi">1</span><span class="p">])</span>
+<span class="n">b</span> <span class="o">=</span> <span class="n">tf</span><span class="o">.</span><span class="n">get_variable</span><span class="p">(</span><span class="s">'b'</span><span class="p">,</span> <span class="p">[</span><span class="mi">1</span><span class="p">])</span>
+
+<span class="c">#network outputs is a list of tensors, but to make matrix multiplications we need a single tensor</span>
+<span class="n">outputs</span> <span class="o">=</span> <span class="n">tf</span><span class="o">.</span><span class="n">reshape</span><span class="p">(</span><span class="n">tf</span><span class="o">.</span><span class="n">concat</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="n">outputs</span><span class="p">),</span> <span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">,</span> <span class="n">num_hidden</span><span class="p">])</span>
+
+<span class="n">output</span> <span class="o">=</span> <span class="n">tf</span><span class="o">.</span><span class="n">matmul</span><span class="p">(</span><span class="n">outputs</span><span class="p">,</span> <span class="n">W</span><span class="p">)</span> <span class="o">+</span> <span class="n">b</span>
+
+<span class="c">#error function</span>
+<span class="n">error</span> <span class="o">=</span> <span class="n">tf</span><span class="o">.</span><span class="nb">pow</span><span class="p">(</span><span class="n">tf</span><span class="o">.</span><span class="n">reduce_sum</span><span class="p">(</span><span class="n">tf</span><span class="o">.</span><span class="nb">pow</span><span class="p">(</span><span class="n">tf</span><span class="o">.</span><span class="n">sub</span><span class="p">(</span><span class="n">output</span><span class="p">,</span> <span class="n">seq_target</span><span class="p">),</span> <span class="mi">2</span><span class="p">)),</span> <span class="o">.</span><span class="mi">5</span><span class="p">)</span>
+
+<span class="c">#learning rate</span>
+<span class="n">lr</span> <span class="o">=</span> <span class="n">tf</span><span class="o">.</span><span class="n">Variable</span><span class="p">(</span><span class="mf">0.</span><span class="p">,</span> <span class="n">trainable</span><span class="o">=</span><span class="bp">False</span><span class="p">,</span> <span class="n">name</span><span class="o">=</span><span class="s">'lr'</span><span class="p">)</span>
+
+<span class="c">#optimizer</span>
+<span class="n">tvars</span> <span class="o">=</span> <span class="n">tf</span><span class="o">.</span><span class="n">trainable_variables</span><span class="p">()</span>
+<span class="n">grads</span><span class="p">,</span> <span class="n">_</span> <span class="o">=</span> <span class="n">tf</span><span class="o">.</span><span class="n">clip_by_global_norm</span><span class="p">(</span><span class="n">tf</span><span class="o">.</span><span class="n">gradients</span><span class="p">(</span><span class="n">error</span><span class="p">,</span> <span class="n">tvars</span><span class="p">),</span> <span class="mf">5.</span><span class="p">)</span>
+<span class="n">optimizer</span> <span class="o">=</span> <span class="n">tf</span><span class="o">.</span><span class="n">train</span><span class="o">.</span><span class="n">AdamOptimizer</span><span class="p">(</span><span class="n">lr</span><span class="p">)</span>
+<span class="n">train_op</span> <span class="o">=</span> <span class="n">optimizer</span><span class="o">.</span><span class="n">apply_gradients</span><span class="p">(</span><span class="nb">zip</span><span class="p">(</span><span class="n">grads</span><span class="p">,</span> <span class="n">tvars</span><span class="p">))</span></code></pre></figure>
+
+<p>Now lets run training for 100 epochs:</p>
+
+<figure class="highlight"><pre><code class="language-python" data-lang="python"><span class="c">#we will save our model after training is complete, so we can restore it later on</span>
+<span class="n">saver</span> <span class="o">=</span> <span class="n">tf</span><span class="o">.</span><span class="n">train</span><span class="o">.</span><span class="n">Saver</span><span class="p">()</span>
+
+<span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="mi">100</span><span class="p">):</span>
+	<span class="n">new_lr</span> <span class="o">=</span> <span class="mf">1e-2</span>
+	<span class="k">if</span> <span class="n">i</span> <span class="o">&gt;</span> <span class="mi">25</span><span class="p">:</span>
+		<span class="n">new_lr</span> <span class="o">=</span> <span class="mf">5e-3</span>
+	<span class="k">elif</span> <span class="n">i</span> <span class="o">&gt;</span> <span class="mi">50</span><span class="p">:</span>
+		<span class="n">new_lr</span> <span class="o">=</span> <span class="mf">1e-4</span>
+	<span class="k">elif</span> <span class="n">i</span> <span class="o">&gt;</span> <span class="mi">75</span><span class="p">:</span>
+		<span class="n">new_lr</span> <span class="o">=</span> <span class="mf">1e-5</span>
+	
+	<span class="n">session</span><span class="o">.</span><span class="n">run</span><span class="p">(</span><span class="n">tf</span><span class="o">.</span><span class="n">assign</span><span class="p">(</span><span class="n">lr</span><span class="p">,</span> <span class="n">new_lr</span><span class="p">))</span>
+
+	<span class="n">err</span><span class="p">,</span> <span class="n">net_outs</span><span class="p">,</span> <span class="n">_</span> <span class="o">=</span> <span class="n">session</span><span class="o">.</span><span class="n">run</span><span class="p">([</span><span class="n">error</span><span class="p">,</span> <span class="n">output</span><span class="p">,</span> <span class="n">train_op</span><span class="p">],</span> <span class="n">feed_dict</span><span class="o">=</span><span class="n">feed</span><span class="p">)</span>
+	<span class="k">print</span><span class="p">(</span><span class="s">'Epoch </span><span class="si">%</span><span class="s">d: </span><span class="si">%1.5</span><span class="s">f'</span><span class="p">)</span> <span class="o">%</span> <span class="p">(</span><span class="n">i</span><span class="p">,</span> <span class="n">err</span><span class="p">)</span>
+
+<span class="n">saver</span><span class="o">.</span><span class="n">save</span><span class="p">(</span><span class="n">session</span><span class="p">,</span> <span class="s">'sine-wave-rnn-'</span><span class="o">+</span><span class="nb">str</span><span class="p">(</span><span class="n">num_hidden</span><span class="p">)</span><span class="o">+</span><span class="s">'-'</span><span class="o">+</span><span class="nb">str</span><span class="p">(</span><span class="n">seq_width</span><span class="p">),</span> <span class="n">global_step</span><span class="o">=</span><span class="mi">0</span><span class="p">)</span>
+
+<span class="c">#now lets feed training data to the network</span>
+<span class="n">train_outs</span> <span class="o">=</span> <span class="n">session</span><span class="o">.</span><span class="n">run</span><span class="p">(</span><span class="n">output</span><span class="p">,</span> <span class="n">feed_dict</span><span class="o">=</span><span class="n">feed</span><span class="p">)</span>
+<span class="n">plt</span><span class="o">.</span><span class="n">plot</span><span class="p">(</span><span class="n">x</span><span class="p">[:</span><span class="n">n_steps</span><span class="p">],</span> <span class="n">train_target</span><span class="p">,</span> <span class="s">'b-'</span><span class="p">,</span> <span class="n">x</span><span class="p">[:</span><span class="n">n_steps</span><span class="p">],</span> <span class="n">train_outs</span><span class="p">,</span> <span class="s">'g--'</span><span class="p">)</span>
+
+<span class="c">#get the rest of the data</span>
+<span class="n">test_input</span><span class="p">,</span> <span class="n">test_target</span> <span class="o">=</span> <span class="n">get_input</span><span class="p">(</span><span class="n">y</span><span class="p">,</span> <span class="n">n_steps</span><span class="p">,</span> <span class="n">offset</span><span class="o">=</span><span class="n">n_steps</span><span class="p">,</span> <span class="n">seq_width</span><span class="o">=</span><span class="mi">10</span><span class="p">,</span><span class="n">lag</span><span class="o">=</span><span class="mi">60</span><span class="p">)</span>
+<span class="n">test_fed</span><span class="o">=</span><span class="p">{</span><span class="n">seq_input</span><span class="p">:</span><span class="n">test_input</span><span class="p">,</span> <span class="n">seq_target</span><span class="p">:</span><span class="n">test_target</span><span class="p">,</span> <span class="n">early_stop</span><span class="p">:</span><span class="n">n_steps</span><span class="p">}</span>
+<span class="n">test_outs</span> <span class="o">=</span> <span class="n">session</span><span class="o">.</span><span class="n">run</span><span class="p">(</span><span class="n">output</span><span class="p">,</span> <span class="n">feed_dict</span><span class="o">=</span><span class="n">feed</span><span class="p">)</span>
+
+<span class="n">plt</span><span class="o">.</span><span class="n">plot</span><span class="p">(</span><span class="n">x</span><span class="p">[</span><span class="n">n_steps</span><span class="p">:</span><span class="mi">2</span><span class="o">*</span><span class="n">n_steps</span><span class="p">],</span> <span class="n">test_outs</span><span class="p">,</span> <span class="s">'r--'</span><span class="p">)</span>
+<span class="n">plt</span><span class="o">.</span><span class="n">plot</span><span class="p">(</span><span class="n">x</span><span class="p">[</span><span class="n">n_steps</span><span class="p">:</span><span class="mi">2</span><span class="o">*</span><span class="n">n_steps</span><span class="p">],</span> <span class="n">test_target</span><span class="p">,</span> <span class="s">'b-'</span><span class="p">)</span>
+<span class="n">plt</span><span class="o">.</span><span class="n">show</span><span class="p">()</span></code></pre></figure>
+
+<p>And here is what we get after training:
+<img src="/assets/training-complete.png" alt="Training complete" /></p>
+
+<p>Full code is available on my <a href="https://github.com/anmaxvl/machine-learning/blob/master/sine_wave.py">github</a>. This implementation is not optimal of course, but I wanted to make it straightforward. Some sort of batch processing can be done in order to reduce memory consumption etc. But I will leave it for now and may be (if I am not too lazy) fix this later. Hope you will have fun with it :)</p>
+
+<p>Feel free to contact me if you have any questions.</p>
+
+<p>Cheers!</p>
+

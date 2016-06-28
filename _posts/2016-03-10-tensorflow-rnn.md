@@ -1,7 +1,7 @@
 ---
 author: Maksim An
 title:	TensorFlow and Recurrent Neural Networks
-category: Coding
+category: TensorFlow
 tags: python tensorflow rnn
 summary: My attempt in using TensorFlow to predict sequences.
 date:	2016-03-10 13:34:00 +0900
@@ -25,7 +25,7 @@ def gen_seq():
 	bell = np.exp(-(np.sin(x-np.pi/2)-2*np.pi)**2/9.)
 	y = 100*np.sin(8*x)*bell
 	y = np.reshape(y, (len(y), 1))
-	
+
 	plt.plot(x, y)
 	plt.show()
 
@@ -33,7 +33,7 @@ def gen_seq():
 {% endhighlight%}
 
 And we will get something like this:
-![Sequence plot](/assets/sequence.png) 
+![Sequence plot](/assets/sequence.png)
 
 Good, we have a sequence now, and we want to feed it to the network. Following the reddit example, lets build our own TensorFlow computation graph.
 
@@ -66,18 +66,18 @@ cell = rnn_cell.LSTMCell(num_hidden, seq_width, initializer=initializer)
 initial_state = cell.zero_state(1, tf.float32)
 
 #feeding inputs to rnn
-outputs, states = rnn(cell, inputs, initial_state=initial_state, 
+outputs, states = rnn(cell, inputs, initial_state=initial_state,
 						sequence_length=early_stop)
 
 {% endhighlight %}
 
-Our goal is to make a prediction what is the value going to be in `lag` steps, based on `seq_width` number of previous steps. 
+Our goal is to make a prediction what is the value going to be in `lag` steps, based on `seq_width` number of previous steps.
 
 {% highlight python %}
 def gen_inputs(y, n_steps, offset, seq_width=10, lag=60):
 	seq_input = []
 	seq_target = []
-	
+
 	for i in range(offset, offset+n_steps):
 		window=[]
 		for j in range(seq_width):
@@ -90,7 +90,7 @@ def gen_inputs(y, n_steps, offset, seq_width=10, lag=60):
 			seq_target.append(y[i+lag+seq_width])
 		else:
 			seq_target.append(0)
-	
+
 	seq_input = np.reshape(np.array(seq_input), (-1, seq_width))
 	seq_target = np.reshape(np.array(seq_target), (-1, 1))
 
@@ -160,7 +160,7 @@ for i in range(100):
 		new_lr = 1e-4
 	elif i > 75:
 		new_lr = 1e-5
-	
+
 	session.run(tf.assign(lr, new_lr))
 
 	err, net_outs, _ = session.run([error, output, train_op], feed_dict=feed)
