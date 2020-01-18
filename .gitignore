@@ -1,4 +1,5 @@
 .gitignore
 .sass-cache
 .jekyll-metadata
+.ruby-version
 _site/*
