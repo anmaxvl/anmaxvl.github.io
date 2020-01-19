@@ -187,8 +187,6 @@ And here is what we get after training:
 
 Full code is available on my [github][my-github]. This implementation is not optimal of course, but I wanted to make it straightforward. Some sort of batch processing can be done in order to reduce memory consumption etc. But I will leave it for now and may be (if I am not too lazy) fix this later. Hope you will have fun with it :)
 
-Feel free to contact me if you have any questions.
-
 Cheers!
 
 [tensorflow-official]: https://www.tensorflow.org/
